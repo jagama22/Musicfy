@@ -51,12 +51,18 @@ jobs:
         working-directory: ios
         run: pod install
 
+      # expo-modules-jsi compila su xcframework con un xcodebuild anidado que arranca con
+      # `env -i`, así que NO hereda CODE_SIGNING_ALLOWED=NO del build principal y falla en un
+      # runner sin certificados. Le añadimos esas opciones al script antes de compilar.
+      - name: Desactivar firma en el build anidado de ExpoModulesJSI
+        run: node dev/patch-jsi-signing.mjs
+
       - name: Compilar (sin firma)
         run: |
           WORKSPACE=$(ls -d ios/*.xcworkspace | head -1)
           SCHEME=$(basename "$WORKSPACE" .xcworkspace)
           echo "SCHEME=$SCHEME" >> "$GITHUB_ENV"
-          set -o pipefail
+          set +e
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -65,7 +71,23 @@ jobs:
             -destination 'generic/platform=iOS' \
             -derivedDataPath build \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            build | tail -n 80
+            build > xcodebuild.log 2>&1
+          STATUS=$?
+          tail -n 60 xcodebuild.log
+          if [ $STATUS -ne 0 ]; then
+            # Publica los errores como anotaciones (visibles sin iniciar sesión en GitHub).
+            grep -E "error:|\*\* BUILD FAILED|did not produce|Signing for|requires a development team" xcodebuild.log \
+              | head -n 25 | while IFS= read -r line; do echo "::error::${line:0:900}"; done
+          fi
+          exit $STATUS
+
+      - name: Guardar log de compilación
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+          retention-days: 7
 
       - name: Empaquetar .ipa
         run: |
