@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
-import { View } from 'react-native';
-import { Stack, SplashScreen } from 'expo-router';
+import { Pressable, Text, View } from 'react-native';
+import { Stack, SplashScreen, type ErrorBoundaryProps } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClientProvider } from '@tanstack/react-query';
@@ -18,8 +18,29 @@ import { ToastHost } from '@/components/Toast';
 import { player } from '@/player/engine';
 import { useSession } from '@/store/session';
 import { colors } from '@/theme';
+import { installGlobalErrorHandler, loadLastError, recordError } from '@/utils/errors';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
+installGlobalErrorHandler();
+loadLastError();
+
+/** Si una pantalla falla al pintarse, mostramos el error en vez de cerrar la app. */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  useEffect(() => {
+    recordError(error);
+  }, [error]);
+  return (
+    <View style={{ flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 14 }}>
+      <Text style={{ color: colors.text, fontSize: 20, fontWeight: '700', textAlign: 'center' }}>Algo ha fallado</Text>
+      <Text style={{ color: colors.subtext, fontSize: 14, textAlign: 'center' }} selectable>
+        {error.message}
+      </Text>
+      <Pressable onPress={retry} style={{ marginTop: 8, backgroundColor: colors.accent, borderRadius: 999, paddingHorizontal: 28, paddingVertical: 12 }}>
+        <Text style={{ color: '#000', fontWeight: '700' }}>Reintentar</Text>
+      </Pressable>
+    </View>
+  );
+}
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({

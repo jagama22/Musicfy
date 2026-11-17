@@ -13,6 +13,7 @@ import { player } from '@/player/engine';
 import { useSession } from '@/store/session';
 import { useSettings, type Bitrate } from '@/store/settings';
 import { colors } from '@/theme';
+import { clearLastError, useLastError } from '@/utils/errors';
 
 const QUALITIES: { value: Bitrate; label: string; hint: string }[] = [
   { value: 96, label: 'Baja', hint: '96 kbit/s' },
@@ -27,6 +28,7 @@ export default function SettingsScreen() {
   const session = useSession((s) => s.session);
   const logout = useSession((s) => s.logout);
   const { maxBitrate, setMaxBitrate } = useSettings();
+  const lastError = useLastError((s) => s.error);
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.bg }}>
@@ -74,6 +76,20 @@ export default function SettingsScreen() {
             <Ionicons name="trash-outline" size={20} color={colors.subtext} />
           </Tap>
         </Section>
+
+        {lastError && (
+          <Section title="Último error">
+            <View style={{ marginHorizontal: 16, backgroundColor: colors.elevated, borderRadius: 8, padding: 12, gap: 6 }}>
+              <T variant="small">{new Date(lastError.at).toLocaleString()}</T>
+              <T variant="body" selectable style={{ fontSize: 14 }}>{lastError.message}</T>
+              {lastError.stack ? <T variant="small" selectable>{lastError.stack}</T> : null}
+            </View>
+            <Tap style={styles.option} onPress={clearLastError}>
+              <T variant="body" style={{ fontSize: 16, flex: 1 }}>Borrar error</T>
+              <Ionicons name="close-circle-outline" size={20} color={colors.subtext} />
+            </Tap>
+          </Section>
+        )}
 
         <Section title="Acerca de">
           <View style={styles.option}>

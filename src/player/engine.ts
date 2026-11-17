@@ -53,6 +53,13 @@ let uidCounter = 0;
 const newUid = () => `q${Date.now().toString(36)}${(uidCounter++).toString(36)}`;
 const toItem = (song: Song, pos: number, manual = false): QueueItem => ({ uid: newUid(), song, manual, pos });
 
+/**
+ * Fuente de audio para el playlist nativo. IMPORTANTE: en iOS/Android `add()` e `insert()`
+ * esperan un objeto `{ uri }` (el JS de expo-audio no convierte strings en estos métodos,
+ * solo en `createAudioPlaylist` y `replace`). Pasar un string hace que la app se cierre.
+ */
+const sourceFor = (song: Song) => ({ uri: streamUrl(song.id) });
+
 // ---------- Instancia nativa ----------
 
 let playlist: AudioPlaylist | null = null;
@@ -161,7 +168,7 @@ async function maybeAutoplay() {
 function appendItems(items: QueueItem[]) {
   if (!items.length) return;
   const pl = getPlaylist();
-  items.forEach((it) => pl.add(streamUrl(it.song.id)));
+  items.forEach((it) => pl.add(sourceFor(it.song)));
   usePlayer.setState((s) => ({ queue: [...s.queue, ...items] }));
 }
 
@@ -169,7 +176,7 @@ function loadQueue(items: QueueItem[], startIndex: number, autoPlay: boolean) {
   const pl = getPlaylist();
   pl.pause();
   pl.clear();
-  items.forEach((it) => pl.add(streamUrl(it.song.id)));
+  items.forEach((it) => pl.add(sourceFor(it.song)));
   usePlayer.setState({ queue: items, index: startIndex });
   if (items.length) {
     pl.skipTo(startIndex);
@@ -254,7 +261,7 @@ export const player = {
     while (insertAt < queue.length && queue[insertAt].manual) insertAt++;
     const pl = getPlaylist();
     const items = list.map((s) => toItem(s, -1, true));
-    items.forEach((it, i) => pl.insert(streamUrl(it.song.id), insertAt + i));
+    items.forEach((it, i) => pl.insert(sourceFor(it.song), insertAt + i));
     const nq = [...queue];
     nq.splice(insertAt, 0, ...items);
     usePlayer.setState({ queue: nq });
@@ -277,7 +284,7 @@ export const player = {
     const pl = getPlaylist();
     const item = queue[from];
     pl.remove(from);
-    pl.insert(streamUrl(item.song.id), to);
+    pl.insert(sourceFor(item.song), to);
     const nq = [...queue];
     nq.splice(from, 1);
     nq.splice(to, 0, item);
@@ -303,7 +310,7 @@ export const player = {
       const newUpcoming = [...manual, ...reordered];
       const pl = getPlaylist();
       for (let i = queue.length - 1; i > index; i--) pl.remove(i);
-      newUpcoming.forEach((it) => pl.add(streamUrl(it.song.id)));
+      newUpcoming.forEach((it) => pl.add(sourceFor(it.song)));
       usePlayer.setState({ queue: [...queue.slice(0, index + 1), ...newUpcoming] });
     }
     usePlayer.setState({ shuffle: on });
