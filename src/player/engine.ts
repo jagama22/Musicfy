@@ -172,6 +172,24 @@ function appendItems(items: QueueItem[]) {
   usePlayer.setState((s) => ({ queue: [...s.queue, ...items] }));
 }
 
+/**
+ * Sustituye la parte de la cola a partir de `from` (siempre posterior a la canción actual)
+ * por `newTail`, tocando solo el final del playlist nativo.
+ *
+ * Por qué: en iOS, `AudioPlaylist.insert()` (y quitar canciones anteriores a la actual)
+ * reconstruye toda la cola nativa y la canción que suena vuelve a empezar desde 0:00.
+ * Quitar canciones posteriores a la actual y añadir al final no la toca.
+ */
+function replaceTail(from: number, newTail: QueueItem[]) {
+  const { queue, index } = usePlayer.getState();
+  const start = Math.max(from, index + 1);
+  const pl = getPlaylist();
+  for (let i = queue.length - 1; i >= start; i--) pl.remove(i);
+  newTail.forEach((it) => pl.add(sourceFor(it.song)));
+  usePlayer.setState({ queue: [...queue.slice(0, start), ...newTail] });
+  scheduleSaveQueue();
+}
+
 function loadQueue(items: QueueItem[], startIndex: number, autoPlay: boolean) {
   const pl = getPlaylist();
   pl.pause();
@@ -259,44 +277,33 @@ export const player = {
     }
     let insertAt = index + 1;
     while (insertAt < queue.length && queue[insertAt].manual) insertAt++;
-    const pl = getPlaylist();
     const items = list.map((s) => toItem(s, -1, true));
-    items.forEach((it, i) => pl.insert(sourceFor(it.song), insertAt + i));
-    const nq = [...queue];
-    nq.splice(insertAt, 0, ...items);
-    usePlayer.setState({ queue: nq });
-    scheduleSaveQueue();
+    replaceTail(insertAt, [...items, ...queue.slice(insertAt)]);
   },
 
+  /** Quita una canción de las que vienen después de la actual. */
   removeAt(i: number) {
     const { queue, index } = usePlayer.getState();
-    if (i === index || i < 0 || i >= queue.length) return;
+    if (i <= index || i >= queue.length) return;
+    // Quitar una canción posterior a la actual no reconstruye la cola nativa: es seguro.
     getPlaylist().remove(i);
-    const nq = queue.filter((_, k) => k !== i);
-    usePlayer.setState({ queue: nq, index: i < index ? index - 1 : index });
+    usePlayer.setState({ queue: queue.filter((_, k) => k !== i) });
     scheduleSaveQueue();
   },
 
-  /** Mueve un elemento de la cola (no el actual) a otra posición posterior a la actual. */
+  /** Mueve una canción de las que vienen después de la actual a otra posición posterior. */
   move(from: number, to: number) {
     const { queue, index } = usePlayer.getState();
-    if (from === index || to <= index || from <= index || from === to) return;
-    const pl = getPlaylist();
-    const item = queue[from];
-    pl.remove(from);
-    pl.insert(sourceFor(item.song), to);
+    if (from <= index || to <= index || from === to || from >= queue.length) return;
     const nq = [...queue];
-    nq.splice(from, 1);
+    const [item] = nq.splice(from, 1);
     nq.splice(to, 0, item);
-    usePlayer.setState({ queue: nq });
-    scheduleSaveQueue();
+    const start = Math.min(from, to);
+    replaceTail(start, nq.slice(start));
   },
 
   clearUpcoming() {
-    const { queue, index } = usePlayer.getState();
-    const pl = getPlaylist();
-    for (let i = queue.length - 1; i > index; i--) pl.remove(i);
-    usePlayer.setState({ queue: queue.slice(0, index + 1) });
+    replaceTail(usePlayer.getState().index + 1, []);
   },
 
   toggleShuffle() {
@@ -307,11 +314,7 @@ export const player = {
       const manual = upcoming.filter((q) => q.manual);
       const rest = upcoming.filter((q) => !q.manual);
       const reordered = on ? shuffleArr(rest) : [...rest].sort((a, b) => a.pos - b.pos);
-      const newUpcoming = [...manual, ...reordered];
-      const pl = getPlaylist();
-      for (let i = queue.length - 1; i > index; i--) pl.remove(i);
-      newUpcoming.forEach((it) => pl.add(sourceFor(it.song)));
-      usePlayer.setState({ queue: [...queue.slice(0, index + 1), ...newUpcoming] });
+      replaceTail(index + 1, [...manual, ...reordered]);
     }
     usePlayer.setState({ shuffle: on });
   },
